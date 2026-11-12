@@ -138,7 +138,7 @@ _NOTIFY_CHOICES = {
 
 
 def _ask_notify_channel() -> str | None:
-    """向导里的通知通道选择；None = 不启用。"""
+    """向导里的通知通道选择；None = 不启用（默认，与 notify.enabled=false 一致）。"""
     dms_ok = dms_available()
     ns_ok = notify_send_available()
     fallback = "dms" if dms_ok else "desktop"
@@ -150,7 +150,7 @@ def _ask_notify_channel() -> str | None:
     print("  3) 两者都要（悬浮 + 留档）")
     print("  4) 不启用")
     for _ in range(3):
-        pick = _ask("选择 1/2/3/4:", "1" if dms_ok else "2").strip().lower()
+        pick = _ask("选择 1/2/3/4:", "4").strip().lower()
         if pick in ("4", "n", "no", "none", "off"):
             return None
         if pick in ("y", "yes"):
@@ -158,7 +158,7 @@ def _ask_notify_channel() -> str | None:
         if pick in _NOTIFY_CHOICES:
             return _NOTIFY_CHOICES[pick]
         print("  无效选择：输入 1-4，或 dms / desktop / both / none")
-    return fallback
+    return None
 
 
 def _download_models() -> bool:
