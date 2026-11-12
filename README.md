@@ -28,13 +28,13 @@ Vulkan；未安装则探测自动跳过，不影响使用。
 
 ```bash
 # A. 预构建包（GitHub Release 下载）
-sudo pacman -U capsasr-0.4.5-1-x86_64.pkg.tar.zst
+sudo pacman -U capsasr-0.5.0-1-x86_64.pkg.tar.zst
 #   要用 CUDA 后端再追加：
-#   sudo pacman -U capsasr-cuda-0.4.5-1-x86_64.pkg.tar.zst
+#   sudo pacman -U capsasr-cuda-0.5.0-1-x86_64.pkg.tar.zst
 
 # B. 从源码构建（自动拉 Release 引擎二进制；需 base-devel 与 patchelf）
 git clone https://github.com/Wry-Zen/capsasr.git && cd capsasr/packaging && makepkg -sf
-sudo pacman -U capsasr-0.4.5-1-x86_64.pkg.tar.zst   # 需要时再装 capsasr-cuda-*.zst
+sudo pacman -U capsasr-0.5.0-1-x86_64.pkg.tar.zst   # 需要时再装 capsasr-cuda-*.zst
 ```
 
 命令补全（bash/zsh/fish）随包安装；仓库直跑可 `source completions/capsasr.bash`（zsh/fish 同理）。
@@ -178,7 +178,7 @@ cmake --build build -j 32 --target llama-funasr-cli
 分发走 **GitHub Release**（AUR 新用户注册暂关；`PKGBUILD`/`.SRCINFO` 保留，注册恢复后可直接提交）。
 
 - **拆双包**：`capsasr`（Vulkan 引擎）+ `capsasr-cuda`（CUDA 引擎，depends: capsasr glibc libstdc++ libgcc libgomp nvidia-utils cuda）
-- **主包 depends**：bash glibc libstdc++ libgcc libgomp python keyd wl-clipboard ydotool libnotify pipewire pipewire-pulse vulkan-icd-loader；optdepends: vulkan-tools（设备探测回退）、bash-completion
+- **主包 depends**：bash glibc libstdc++ libgcc libgomp python keyd wl-clipboard ydotool pipewire pipewire-pulse vulkan-icd-loader；optdepends: libnotify（桌面通知通道）、dms（悬浮 toast 通道，AUR/自装）、vulkan-tools（设备探测回退）、bash-completion
 - **Release 资产四件**：`capsasr-engine-vulkan`、`capsasr-engine-cuda`、预构建包 `capsasr-<ver>-x86_64.pkg.tar.zst` 与 `capsasr-cuda-<ver>-x86_64.pkg.tar.zst`
 - **发布顺序**：打 tag → 建 Release 传引擎二进制 → `sha256sum` 填进 PKGBUILD → `makepkg -sf`（需 `pacman -S patchelf`，用于剥离 CUDA 引擎 RUNPATH）→ 预构建包传同一 Release
 - **本地验证**：见 PKGBUILD 头注释（makepkg 的 source 不收绝对路径，产物以基名放入 PKGBUILD 目录）
@@ -195,5 +195,5 @@ sudo pacman -R capsasr            # 卸载系统包（装了 capsasr-cuda 则 `p
 ## 依赖与许可
 
 - Python ≥ 3.11 标准库（tomllib；**零 pip 依赖**）
-- 系统依赖见包 `depends`（pipewire/parec、keyd、wl-clipboard、ydotool+ydotoold、libnotify、Vulkan 加载器）；DMS 为可选依赖，仅 `notify.channel = dms/both` 时需要
+- 系统依赖见包 `depends`（pipewire/parec、keyd、wl-clipboard、ydotool+ydotoold、Vulkan 加载器）；通知为**可选**：libnotify（notify-send 通道）与 dms（toast 通道）缺失时提示静默跳过/退回，`capsasr init` 与 `doctor` 会显示各通道可用性
 - 模型权重 Apache-2.0（FunAudioLLM）；本仓库代码 MIT（见 LICENSE）

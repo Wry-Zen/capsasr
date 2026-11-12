@@ -17,7 +17,7 @@ from pathlib import Path
 
 from . import backend, downloader
 from .config import APP_ROOT, CAPSASR_HOME, DEFAULTS, RUNTIME_DIR, Config, config_path, models_dir
-from .notify import CHANNELS, dms_available
+from .notify import CHANNELS, dms_available, notify_send_available
 
 # dotted key → (节, 键, 类型)；类型用于 set 时的值解析/校验
 KEYS: dict[str, tuple[str, str, type]] = {}
@@ -140,11 +140,13 @@ _NOTIFY_CHOICES = {
 def _ask_notify_channel() -> str | None:
     """向导里的通知通道选择；None = 不启用。"""
     dms_ok = dms_available()
+    ns_ok = notify_send_available()
     fallback = "dms" if dms_ok else "desktop"
     print("\n通知通道:")
     print("  1) DMS 悬浮 toast" + ("（检测到 dms）" if dms_ok
                                  else "（未检测到 dms，运行时自动退回通用通知）"))
-    print("  2) 通用通知 notify-send（进通知中心留档）")
+    print("  2) 通用通知 notify-send（进通知中心留档）"
+          + ("" if ns_ok else "（✗ 未安装 libnotify，装后可用: sudo pacman -S libnotify）"))
     print("  3) 两者都要（悬浮 + 留档）")
     print("  4) 不启用")
     for _ in range(3):
@@ -505,6 +507,9 @@ def cmd_doctor(args) -> int:
         detail = cfg.notify_channel
         if cfg.notify_channel in ("dms", "both"):
             detail += "（dms ✓）" if dms_available() else "（dms ✗，运行时退回 notify-send）"
+        if cfg.notify_channel in ("desktop", "both"):
+            detail += ("（notify-send ✓）" if notify_send_available()
+                       else "（notify-send ✗ 缺 libnotify，提示将静默丢弃: sudo pacman -S libnotify）")
         print(f" 通知通道: {detail}")
     else:
         print(" 通知通道: 未启用")

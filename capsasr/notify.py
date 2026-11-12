@@ -51,6 +51,11 @@ def dms_available() -> bool:
     return _dms_ok
 
 
+def notify_send_available() -> bool:
+    """notify-send 是否安装（libnotify 为可选依赖，缺失时提示静默跳过）。"""
+    return shutil.which("notify-send") is not None
+
+
 def _is_status_output(out: bytes) -> bool:
     """只认 DMS toast status 的合法返回：hidden 或 visible:<level>:<message>。"""
     text = (out or b"").strip()

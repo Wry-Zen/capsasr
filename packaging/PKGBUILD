@@ -32,7 +32,7 @@
 
 pkgbase=capsasr
 pkgname=(capsasr capsasr-cuda)
-pkgver=0.4.5
+pkgver=0.5.0
 pkgrel=1
 pkgdesc="本地语音输入: 长按 CapsLock 说话, 松手识别粘贴 (引擎 Fun-ASR-Nano GGUF, 无 PyTorch)"
 arch=(x86_64)
@@ -57,9 +57,11 @@ _prepare() {
 }
 
 package_capsasr() {
-    # libstdc++/libgcc/libgomp: 引擎 NEEDED（gcc-libs 现为伞形包，勿用）；bash: capsasr-daemon/setup-keyd.sh
-    depends=(bash glibc libstdc++ libgcc libgomp python keyd wl-clipboard ydotool libnotify pipewire pipewire-pulse vulkan-icd-loader)
+    # libnotify 为可选依赖（notify-send 缺失时提示静默跳过，见 optdepends）；bash: capsasr-daemon/setup-keyd.sh
+    depends=(bash glibc libstdc++ libgcc libgomp python keyd wl-clipboard ydotool pipewire pipewire-pulse vulkan-icd-loader)
     optdepends=(
+      'libnotify: 桌面通知通道 notify-send（缺失时提示静默跳过）'
+      'dms: DMS 悬浮 toast 通知通道（AUR/自行安装，缺失自动退回 notify-send）'
       'vulkan-tools: 设备探测回退'
       'bash-completion: bash 自动加载补全'
     )
