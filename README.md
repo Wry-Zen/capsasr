@@ -28,13 +28,13 @@ Vulkan；未安装则探测自动跳过，不影响使用。
 
 ```bash
 # A. 预构建包（GitHub Release 下载）
-sudo pacman -U capsasr-0.5.1-1-x86_64.pkg.tar.zst
+sudo pacman -U capsasr-0.6.0-1-x86_64.pkg.tar.zst
 #   要用 CUDA 后端再追加：
-#   sudo pacman -U capsasr-cuda-0.5.1-1-x86_64.pkg.tar.zst
+#   sudo pacman -U capsasr-cuda-0.6.0-1-x86_64.pkg.tar.zst
 
 # B. 从源码构建（自动拉 Release 引擎二进制；需 base-devel 与 patchelf）
 git clone https://github.com/Wry-Zen/capsasr.git && cd capsasr/packaging && makepkg -sf
-sudo pacman -U capsasr-0.5.1-1-x86_64.pkg.tar.zst   # 需要时再装 capsasr-cuda-*.zst
+sudo pacman -U capsasr-0.6.0-1-x86_64.pkg.tar.zst   # 需要时再装 capsasr-cuda-*.zst
 ```
 
 命令补全（bash/zsh/fish）随包安装；仓库直跑可 `source completions/capsasr.bash`（zsh/fish 同理）。
@@ -64,6 +64,7 @@ capsasr-daemon &        # init 选了自启则下次登录生效；这是立即�
 | `capsasr config get backend.mode` | 查单键 |
 | `capsasr config set backend.mode vulkan` | **终端改写配置**：行级编辑，保留注释与结构 |
 | `capsasr config edit` / `config path` | 用 $EDITOR 打开配置 / 显示路径 |
+| `capsasr hotwords add 词1 词2` | 热词管理：`list`（默认）查看 / `add`·`remove` 增删 / `edit` 编辑器 / `reload` 显式重载；改动自动经 socket 通知 daemon 重载（引擎重启约 1s），无需 pkill |
 | `capsasr setup-keyd` | 把 `hotkey.hold_ms` 写入 keyd（sudo）；`--hold-ms N` 直接指定，`--remove` 回滚 |
 | `capsasr uninstall` | 清理用户级痕迹（自启/服务/进程/数据）；**应在 `pacman -R` 之前执行**，`--purge` 连模型一起删 |
 | `capsasr cli a.wav` | 经守护进程转写任意音频（16kHz 16bit PCM wav） |
@@ -84,7 +85,7 @@ capsasr-daemon &        # init 选了自启则下次登录生效；这是立即�
   logs/          daemon.log / engine.log
 ```
 
-热词：编辑 `~/.capsasr/hotwords.txt` 后 `pkill -HUP -f "[c]apsasr.daemon"` 热重载（重启常驻引擎进程）。
+热词是**生成偏置**（解码 LLM 的先验上下文，非硬约束）：放专名/术语/人名，宁缺毋滥，句子式条目无效。管理走 `capsasr hotwords add|remove|edit|list`，改动自动重载；也可直接编辑 `~/.capsasr/hotwords.txt`（每行一个，`#` 注释）后 `capsasr hotwords reload`。
 
 ## 配置参考
 

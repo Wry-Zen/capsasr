@@ -1,7 +1,8 @@
 # bash completion for capsasr
 # 安装位置: /usr/share/bash-completion/completions/capsasr
-_capsasr_subcommands="init config doctor cli daemon setup-keyd uninstall"
+_capsasr_subcommands="init config doctor cli daemon hotwords setup-keyd uninstall"
 _capsasr_config_actions="get set edit path list"
+_capsasr_hotwords_actions="list add remove edit reload"
 _capsasr_config_keys="backend.mode backend.device backend.ngl backend.enc_threads \
 models.enc models.llm models.vad engine.language engine.hotwords \
 hotkey.layer hotkey.hold_ms notify.enabled notify.channel \
@@ -15,7 +16,7 @@ _capsasr() {
 
     for ((i = 1; i < COMP_CWORD; i++)); do
         case "${COMP_WORDS[i]}" in
-            init|config|doctor|cli|daemon|setup-keyd|uninstall) cmd="${COMP_WORDS[i]}"; break ;;
+            init|config|doctor|cli|daemon|hotwords|setup-keyd|uninstall) cmd="${COMP_WORDS[i]}"; break ;;
         esac
     done
 
@@ -29,6 +30,7 @@ _capsasr() {
         doctor)     COMPREPLY=($(compgen -W "--verify -h --help" -- "$cur")) ;;
         cli)        COMPREPLY=($(compgen -f -- "$cur")) ;;
         daemon)     COMPREPLY=($(compgen -W "--config -h --help" -- "$cur")) ;;
+        hotwords)  COMPREPLY=($(compgen -W "$_capsasr_hotwords_actions -h --help" -- "$cur")) ;;
         setup-keyd) COMPREPLY=($(compgen -W "--hold-ms --remove -h --help" -- "$cur")) ;;
         uninstall)  COMPREPLY=($(compgen -W "--purge -h --help" -- "$cur")) ;;
         config)

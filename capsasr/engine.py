@@ -123,11 +123,13 @@ class Engine:
             lines.put(raw.decode("utf8", "replace").rstrip("\r\n"))
         lines.put(None)
 
-    def reload_hotwords(self):
+    def reload_hotwords(self) -> int:
+        """重读热词并重启引擎进程（热词在启动参数里）；返回新词数供 socket 应答。"""
         self.hotwords = self.cfg.load_hotwords()
         with self._lock:
-            self._spawn(self._cand)  # 热词在启动参数里，重启常驻进程生效
+            self._spawn(self._cand)
         print(f"[engine] hotwords reloaded: {len(self.hotwords)}", flush=True)
+        return len(self.hotwords)
 
     def close(self):
         if self._proc and self._proc.poll() is None:

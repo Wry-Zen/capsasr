@@ -22,6 +22,7 @@ _capsasr() {
         'doctor:环境体检'
         'cli:经守护进程转写 wav'
         'daemon:前台运行守护进程'
+        'hotwords:热词表管理（list/add/remove/edit/reload）'
         'setup-keyd:配置 keyd 热键（sudo）'
         'uninstall:清理用户级痕迹（卸载前执行）'
     )
@@ -45,6 +46,16 @@ _capsasr() {
                     ;;
                 daemon)
                     _arguments '--config[配置文件]:文件:_files'
+                    ;;
+                hotwords)
+                    local -a hw_actions
+                    hw_actions=(list add remove edit reload)
+                    _arguments -C '1:动作:->hwact'
+                    case $state in
+                        hwact)
+                            _describe -t actions 'hotwords' hw_actions
+                            ;;
+                    esac
                     ;;
                 setup-keyd)
                     _arguments '--hold-ms[按住阈值(ms)]:毫秒:' '--remove[回滚 keyd 配置]'

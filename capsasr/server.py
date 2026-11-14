@@ -5,14 +5,14 @@ import threading
 
 
 class Server:
-    """Unix socket 接口：接收 {"wav": path}，返回 {"ok", "text"}。
-
-    供 CLI/脚本转写任意音频文件，不经数据集落盘。
+    """Unix socket 接口：{"wav": path} → {"ok","text"} 转写；
+    {"cmd":"reload"} → {"ok","words"} 热词重载（capsasr hotwords 系列命令用）。
     """
 
-    def __init__(self, socket_path: str, transcribe_fn):
+    def __init__(self, socket_path: str, transcribe_fn, reload_fn=None):
         self.path = socket_path
         self.transcribe = transcribe_fn
+        self.reload = reload_fn
         self._thread = threading.Thread(target=self._loop, daemon=True)
 
     def start(self):
@@ -44,8 +44,14 @@ class Server:
         try:
             fp = conn.makefile("r")
             req = json.loads(fp.readline())
-            text = self.transcribe(req["wav"])
-            reply = {"ok": True, "text": text}
+            if "cmd" in req:
+                if req["cmd"] == "reload" and self.reload:
+                    reply = {"ok": True, "words": self.reload()}
+                else:
+                    reply = {"ok": False, "error": f"未知命令: {req.get('cmd')!r}"}
+            else:
+                text = self.transcribe(req["wav"])
+                reply = {"ok": True, "text": text}
         except Exception as e:
             reply = {"ok": False, "error": str(e)}
         try:

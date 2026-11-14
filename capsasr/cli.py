@@ -209,7 +209,8 @@ def cmd_init(args) -> int:
     if enable_hw:
         if not hw.exists():
             hw.write_text(
-                "# 每行一个热词，# 开头为注释。改后执行: pkill -HUP -f [c]apsasr.daemon\n",
+                "# 每行一个热词：专名/术语/人名。这是生成偏置——宁缺毋滥，句子无效。\n"
+                "# 管理: capsasr hotwords add|remove|edit|list，改动自动通知 daemon 重载。\n",
                 encoding="utf8",
             )
         print(f"热词: {hw}")
@@ -513,6 +514,13 @@ def cmd_doctor(args) -> int:
         print(f" 通知通道: {detail}")
     else:
         print(" 通知通道: 未启用")
+    hw_disabled = cfg.hotwords_file.name == "hotwords.disabled"
+    if hw_disabled:
+        print(" 热词: 停用")
+    else:
+        hw_words = cfg.load_hotwords()
+        prev = "、".join(hw_words[:3]) + ("…" if len(hw_words) > 3 else "")
+        print(f" 热词: {len(hw_words)} 个" + (f"（{prev}）" if prev else "（空表，capsasr hotwords add 添加）"))
     check("ydotoold", _ydotoold_running(), "Ctrl+V 模拟需要 ydotoold 运行")
     xdg = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     check("XDG 自启条目", (xdg / "autostart/capsasr.desktop").exists())
@@ -547,6 +555,138 @@ def cmd_cli(args) -> int:
         print(reply["text"])
         return 0
     print("错误:", reply.get("error"), file=sys.stderr)
+    return 1
+
+
+# ---------- capsasr hotwords（热词管理：编辑免 pkill，改动自动重载） ----------
+
+def _hotwords_target() -> tuple[Path, bool]:
+    """(热词文件, 是否停用)。停用时仍管理默认文件，改动在重新启用后生效。"""
+    cfg = Config()
+    if cfg.hotwords_file.name == "hotwords.disabled":
+        return CAPSASR_HOME / "hotwords.txt", True
+    return cfg.hotwords_file, False
+
+
+def _hw_lines(p: Path) -> list[str]:
+    return p.read_text(encoding="utf8").splitlines() if p.exists() else []
+
+
+def _hw_words(p: Path) -> list[str]:
+    return [s for s in (l.strip() for l in _hw_lines(p)) if s and not s.startswith("#")]
+
+
+def _hw_advise(p: Path):
+    """给出偏置效果提示：过长的表会稀释，句子式条目不如词。"""
+    words = _hw_words(p)
+    if len(words) > 200:
+        print(f"  ! 词表已有 {len(words)} 词——过长会稀释偏置效果，建议精简到几十词内")
+    for w in words:
+        if len(w) > 12 or any(ch.isspace() for ch in w):
+            print(f"  ! 「{w}」更像短语/句子——热词以词和短专名为宜，句子不会可靠生效")
+
+
+def _daemon_reload() -> int | None:
+    """经 daemon socket 通知热词重载；返回新词数，daemon 未运行/忙返回 None。"""
+    cfg = Config()
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(15)
+        s.connect(cfg.socket_path)
+        s.sendall((json.dumps({"cmd": "reload"}) + "\n").encode())
+        buf = b""
+        while True:
+            b = s.recv(65536)
+            if not b:
+                break
+            buf += b
+        reply = json.loads(buf.decode())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return reply.get("words") if reply.get("ok") else None
+
+
+def _hw_autoreload():
+    n = _daemon_reload()
+    if n is not None:
+        print(f"已通知 daemon 重载：{n} 词（引擎重启约 1s）")
+    else:
+        print("daemon 未运行或正忙——改动会在下次启动/重载时生效（capsasr hotwords reload）")
+
+
+def cmd_hotwords(args) -> int:
+    p, disabled = _hotwords_target()
+    action = args.action or "list"
+    if disabled:
+        print("注意：热词当前停用（engine.hotwords 为空），改动在重新启用后生效")
+
+    if action == "list":
+        words = _hw_words(p)
+        print(f"热词: {len(words)} 个（{'停用' if disabled else '启用'}）")
+        print(f"文件: {p}")
+        for w in words[:10]:
+            print(f"  {w}")
+        if len(words) > 10:
+            print(f"  … 共 {len(words)} 个")
+        _hw_advise(p)
+        return 0
+
+    if action == "add":
+        lines = _hw_lines(p)
+        existing = {s for s in (l.strip() for l in lines) if s and not s.startswith("#")}
+        added, dups = [], []
+        for w in args.words:
+            w = w.strip()
+            if not w:
+                continue
+            (dups if w in existing else added).append(w)
+            existing.add(w)
+        if added:
+            if lines and lines[-1].strip():
+                lines.append("")
+            p.write_text("\n".join(lines + added) + "\n", encoding="utf8")
+        print(f"新增 {len(added)} 词" + (f"，跳过重复 {len(dups)} 词" if dups else ""))
+        _hw_advise(p)
+        _hw_autoreload()
+        return 0
+
+    if action == "remove":
+        rm = {w.strip() for w in args.words if w.strip()}
+        kept, removed = [], []
+        for l in _hw_lines(p):
+            s = l.strip()
+            if s and not s.startswith("#") and s in rm:
+                removed.append(s)
+            else:
+                kept.append(l)
+        if removed:
+            p.write_text("\n".join(kept) + "\n", encoding="utf8")
+        print(f"移除 {len(removed)} 词" + (f"，未找到 {len(rm) - len(set(removed))} 词" if len(set(removed)) < len(rm) else ""))
+        _hw_autoreload()
+        return 0
+
+    if action == "edit":
+        if not p.exists():
+            p.write_text(
+                "# 每行一个热词：专名/术语/人名。这是生成偏置——宁缺毋滥，句子无效。\n"
+                "# 也可用 capsasr hotwords add 命令追加。\n",
+                encoding="utf8",
+            )
+        editor = os.environ.get("EDITOR", "nano")
+        rc = subprocess.call([editor, str(p)])
+        if rc == 0:
+            _hw_advise(p)
+            _hw_autoreload()
+        return rc
+
+    if action == "reload":
+        n = _daemon_reload()
+        if n is None:
+            print("daemon 未运行或正忙（可能转写中）——稍后重试，或下次启动自动生效",
+                  file=sys.stderr)
+            return 1
+        print(f"已重载：{n} 词")
+        return 0
     return 1
 
 
@@ -613,6 +753,13 @@ def main(argv=None) -> int:
     sp = sub.add_parser("cli", help="经守护进程转写 wav 文件")
     sp.add_argument("wav")
     sp.set_defaults(fn=cmd_cli)
+
+    sp = sub.add_parser("hotwords", help="热词表管理：list/add/remove/edit/reload，改动自动通知 daemon 重载")
+    sp.add_argument("action", nargs="?", default="list",
+                    choices=["list", "add", "remove", "edit", "reload"],
+                    help="list=查看（默认） add/remove=增删词条 edit=编辑器 reload=显式重载")
+    sp.add_argument("words", nargs="*", help="add/remove 的词条")
+    sp.set_defaults(fn=cmd_hotwords)
 
     sp = sub.add_parser("setup-keyd", help="配置 keyd 热键（sudo）：按住阈值生效 / 回滚")
     sp.add_argument("--hold-ms", type=int, help="按住时长阈值毫秒（默认取配置 hotkey.hold_ms）")

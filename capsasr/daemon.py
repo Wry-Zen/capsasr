@@ -24,7 +24,10 @@ class Daemon:
         print("[daemon] loading engine...", flush=True)
         self.engine = Engine(cfg)
         self.capture = Capture(cfg)
-        self.server = Server(cfg.socket_path, self.engine.transcribe)
+        self.server = Server(
+            cfg.socket_path, self.engine.transcribe,
+            reload_fn=self.engine.reload_hotwords,
+        )
 
         self._jobs: queue.Queue = queue.Queue(maxsize=1)
         self._worker = threading.Thread(target=self._work, daemon=True)
