@@ -28,13 +28,13 @@ Vulkan；未安装则探测自动跳过，不影响使用。
 
 ```bash
 # A. 预构建包（GitHub Release 下载）
-sudo pacman -U capsasr-0.6.0-1-x86_64.pkg.tar.zst
+sudo pacman -U capsasr-0.6.0-2-x86_64.pkg.tar.zst
 #   要用 CUDA 后端再追加：
-#   sudo pacman -U capsasr-cuda-0.6.0-1-x86_64.pkg.tar.zst
+#   sudo pacman -U capsasr-cuda-0.6.0-2-x86_64.pkg.tar.zst
 
-# B. 从源码构建（自动拉 Release 引擎二进制；需 base-devel 与 patchelf）
+# B. 从源码构建（自动拉预编译引擎；需 base-devel 与 patchelf）
 git clone https://github.com/Wry-Zen/capsasr.git && cd capsasr/packaging && makepkg -sf
-sudo pacman -U capsasr-0.6.0-1-x86_64.pkg.tar.zst   # 需要时再装 capsasr-cuda-*.zst
+sudo pacman -U capsasr-0.6.0-2-x86_64.pkg.tar.zst   # 需要时再装 capsasr-cuda-*.zst
 ```
 
 命令补全（bash/zsh/fish）随包安装；仓库直跑可 `source completions/capsasr.bash`（zsh/fish 同理）。
@@ -141,49 +141,13 @@ device = "auto"    # 设备名子串（如 "RADV"、"RTX"；纯数字一律按�
 - 设备枚举优先引擎 `--list-devices`（Vulkan 引擎 0.4.1 起原生支持，展示真实设备名）；无此参数的旧二进制回退 `vulkaninfo --summary` / `nvidia-smi -L`
 - 选卡结果经 `GGML_VK_VISIBLE_DEVICES` / `CUDA_VISIBLE_DEVICES` 注入子进程
 
-## 引擎与补丁
+## 引擎
 
-主包携带 `capsasr-engine-vulkan`（0.4.3 起可移植构建：`GGML_NATIVE=OFF`，构建机指令集不再泄漏进二进制；FULL RELRO + PIE、无 RUNPATH、原生 `--list-devices`）；
-`capsasr-cuda` 携带 `capsasr-engine-cuda`（0.4.3 起七档全覆盖：sm_75/80/86/89/90/100/120a SASS + 每档 PTX，比列表更新的卡可 JIT；不再链接 nccl）。CUDA 引擎包内已剥离 RUNPATH，
-运行库（cudart/cublas/nccl）由 daemon 在 spawn 时注入 `LD_LIBRARY_PATH` 解析——
-`/opt/cuda`、`CUDA_HOME` 等任意安装位置均可。
+识别引擎基于 Fun-ASR 官方 llama.cpp fork（Fun-ASR-Nano，GGUF Q8_0），随包预编译、免自建：
 
-引擎基于 Fun-ASR 官方 llama.cpp fork，GGUF Q8_0（官方验证 CER 与 PyTorch 参考差 0.02%）。本项目补丁（`tools/funasr-cli.patch`）：
-
-1. **SIGUSR1 尾段提交**：上游只在 stdin EOF 时 flush，且 VAD 尾段确认需 1850ms 静音，不适合"松手即要结果"；补丁改为信号置标志 + 主循环检查，对当前段 is_final 提交并输出 `FLUSHED` 结束标记。stdin 读取改 select+read（信号落在 fread 阻塞窗口会死锁到超时）
-2. **`--hotwords`**：按 funasr 官方 prompt 格式注入热词上下文
-3. **`--ngl` / `--enc-device`**：LLM 层标准 offload；221M 编码器经 ggml backend registry 上传 GPU 常驻（CUDA/Vulkan 通用，失败自动回退 CPU；日志 `[enc] encoder on GPU` 可确认）
-4. **`--enc-threads`**：CPU 回退线程数（默认 16）
-5. **`--list-devices`**：打印 backend registry 设备表，供守护进程选卡探测（在参数校验前处理，可裸调）
-
-重编译（Vulkan）：拉 [Fun-ASR](https://github.com/QwenAudio/Fun-ASR) tarball → `patch -p1 < tools/funasr-cli.patch` → 拉固定版本 llama.cpp（`8086439a4cea94c71a5dfb8fe4ad1546aebd640f`，勿随意升级，补丁与该版 ggml API 对齐）→ 在 `runtime/llama.cpp/` 下：
-
-```
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_VULKAN=ON -DLLAMA_CURL=OFF \
-      -DGGML_NATIVE=OFF \
-      -DCMAKE_SKIP_RPATH=ON -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,relro,-z,now" \
-      -DFETCHCONTENT_SOURCE_DIR_LLAMA=<本地llama.cpp路径>
-cmake --build build -j 32 --target llama-funasr-cli
-```
-
-依赖 `vulkan-headers spirv-headers shaderc`。CUDA 版把 `-DGGML_VULKAN=ON` 换成 `-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;100;120-virtual"`，需 `/opt/cuda`（编译机装 `cuda` 包即可，**不需要 NVIDIA 显卡在场**；列表含分号，shell 里必须带引号；nccl 可选——不装则不链，仅影响多卡并行性能，本工具选卡固定单卡）。
-
-可移植性要点（在别人的设备上踩过 SIGILL 后的结论）：
-- `GGML_NATIVE=OFF`：默认 `native` 会把构建机指令集（如 AVX-512）烤进代码，在旧 CPU 上直接非法指令（i5-13500H 实测）。关掉后编译到 **AVX2 档**（与 llama.cpp 官方发布二进制一致，覆盖约 2013 年后的 x86-64）；热点在 GPU，CPU 档位只影响 VAD（毫秒级）与 CPU 兜底模式（略慢）。不启用 `GGML_CPU_ALL_VARIANTS`：它要求动态后端，产物变成多个 .so，破坏单文件布局
-- CUDA 架构列表覆盖 Turing(75)/Ampere(80,86)/Ada(89)/Hopper(90)/Blackwell(100,120)；末位 `120-virtual` 嵌 PTX，更新的卡可 JIT
-- `-z now` 补全 FULL RELRO；`CMAKE_SKIP_RPATH` 去掉 `/opt/cuda` RUNPATH，运行库改由 daemon 注入 `LD_LIBRARY_PATH`（`capsasr/backend.py`）
-- **先停 daemon 再 cp 二进制**（Text file busy），验证后删构建树
-
-## 打包分发（维护者）
-
-分发走 **GitHub Release**（AUR 新用户注册暂关；`PKGBUILD`/`.SRCINFO` 保留，注册恢复后可直接提交）。
-
-- **拆双包**：`capsasr`（Vulkan 引擎）+ `capsasr-cuda`（CUDA 引擎，depends: capsasr glibc libstdc++ libgcc libgomp nvidia-utils cuda）
-- **主包 depends**：bash glibc libstdc++ libgcc libgomp python keyd wl-clipboard ydotool pipewire pipewire-pulse vulkan-icd-loader；optdepends: libnotify（桌面通知通道）、dms（悬浮 toast 通道，AUR/自装）、vulkan-tools（设备探测回退）、bash-completion
-- **Release 资产四件**：`capsasr-engine-vulkan`、`capsasr-engine-cuda`、预构建包 `capsasr-<ver>-x86_64.pkg.tar.zst` 与 `capsasr-cuda-<ver>-x86_64.pkg.tar.zst`
-- **发布顺序**：打 tag → 建 Release 传引擎二进制 → `sha256sum` 填进 PKGBUILD → `makepkg -sf`（需 `pacman -S patchelf`，用于剥离 CUDA 引擎 RUNPATH）→ 预构建包传同一 Release
-- **本地验证**：见 PKGBUILD 头注释（makepkg 的 source 不收绝对路径，产物以基名放入 PKGBUILD 目录）
-- **namcap 基线**：0 错误；主包仅剩 keyd 等子进程运行依赖误报（静态分析盲区）；capsasr-cuda 仅剩 cublasLt unused（链接器 as-needed 现象）与跨包依赖不可见两条
+- `capsasr-engine-vulkan`：主包携带，仅需 Vulkan 驱动；可移植构建（AVX2 档，2013 年后的 x86_64 通用）
+- `capsasr-engine-cuda`：`capsasr-cuda` 子包携带，sm_75–120a 全档（RTX 20 系至 50 系）+ 各档 PTX；CUDA 运行库由 daemon 自动解析
+- 对上游的修改（SIGUSR1 松手即出字、编码器/LLM GPU 化、热词注入、设备枚举）见 `tools/funasr-cli.patch`
 
 ## 回滚 / 卸载
 

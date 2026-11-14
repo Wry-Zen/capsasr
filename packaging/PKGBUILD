@@ -12,15 +12,11 @@
 #
 # 发布前（顺序）:
 #   1. 代码推上去并打 tag v$pkgver
-#   2. 建 Release v$pkgver，上传两个引擎二进制 capsasr-engine-{vulkan,cuda}
-#      （重编译加 -DGGML_NATIVE=OFF（可移植，勿用构建机指令集）
-#        -DCMAKE_SKIP_RPATH=ON -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,relro,-z,now"；
-#        CUDA 再加 -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;100;120-virtual"（编译机装 cuda 包即可,无需 NVIDIA 卡；nccl 可选）,
-#        见 ARCHITECTURE.md §9 —— FULL RELRO 只能在链接期解决）
-#   3. sha256sum 两个二进制，把真实值填进 sha256sums（源码归档可留 SKIP）
-#   4. cd packaging && makepkg -sf（先 pacman -S patchelf），把
-#      capsasr-*.zst 与 capsasr-cuda-*.zst 都上传到该 Release
-#   5. （可选，AUR 恢复注册后）makepkg --printsrcinfo > .SRCINFO，与 PKGBUILD 提交 AUR
+#   2. cd packaging && makepkg -sf（需 patchelf），把两个预构建包传到 Release v$pkgver
+#   3. （可选，AUR 恢复注册后）makepkg --printsrcinfo > .SRCINFO，与 PKGBUILD 提交 AUR
+#
+# 引擎二进制与版本解耦：存放在专用 Release "engines"（上面 _engine/_engine_cuda 指向那里），
+# 只在重编引擎时更新一次并同步 sha256sums；常规发版不重传引擎，版本 Release 只放包。
 #
 # 本地验证（未发布时，绕过网络；需 PATH 里有 patchelf；makepkg 的 source 不收绝对路径，
 #   产物须以 source 基名出现在 PKGBUILD 目录，环境变量覆盖为裸文件名）:
@@ -33,7 +29,7 @@
 pkgbase=capsasr
 pkgname=(capsasr capsasr-cuda)
 pkgver=0.6.0
-pkgrel=1
+pkgrel=2
 pkgdesc="本地语音输入: 长按 CapsLock 说话, 松手识别粘贴 (引擎 Fun-ASR-Nano GGUF, 无 PyTorch)"
 arch=(x86_64)
 _repo="https://github.com/Wry-Zen/capsasr"
@@ -43,8 +39,8 @@ options=(!debug)
 makedepends=(patchelf)
 
 : "${_code:=${_repo}/archive/refs/tags/v${pkgver}.tar.gz}"
-: "${_engine:=${_repo}/releases/download/v${pkgver}/capsasr-engine-vulkan}"
-: "${_engine_cuda:=${_repo}/releases/download/v${pkgver}/capsasr-engine-cuda}"
+: "${_engine:=${_repo}/releases/download/engines/capsasr-engine-vulkan}"
+: "${_engine_cuda:=${_repo}/releases/download/engines/capsasr-engine-cuda}"
 source=("$_code" "$_engine" "$_engine_cuda")
 sha256sums=(SKIP 67d1e1c8c66374f8b90ffb5c7c98000851899cfcd788a6134ff9a0afc78e6854 d91b58bf7ff82630866ba392b5d5c79fc45f9551cdfbcf9787463ff2e496309a)
 
