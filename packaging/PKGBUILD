@@ -1,18 +1,23 @@
 # CapsASR 打包脚本（Arch；Release 分发优先，AUR 可选）
 #
-# 拆分双包:
+# 拆分三包:
 #   capsasr       主包（Python 运行体 + Vulkan 引擎 + 控制命令/补全/文档）
-#   capsasr-cuda  CUDA 引擎（depends: nvidia-utils cuda nccl；NVIDIA 用户加装，
+#   capsasr-cuda  CUDA 引擎（depends: nvidia-utils cuda；NVIDIA 用户加装，
 #                 auto 模式下优先于 Vulkan，不装则探测自动跳过）
+#   capsasr-fcitx fcitx5 文本提交模块（源码编译的 addon；识别文本经输入法
+#                 直接进焦点窗口，不占剪贴板；主包 optdepends，未装时
+#                 paste.method=fcitx 自动回退剪贴板粘贴）
 # 布局: /usr/bin/{capsasr,capsasr-daemon}（控制命令, 进 PATH）
 #       /usr/lib/capsasr/{capsasr,engines,tools}（核心运行体, 不进 PATH, 防与系统 llama.cpp 冲突）
+#       /usr/lib/fcitx5/capsasrcommit.so + /usr/share/fcitx5/addon/capsasrcommit.conf
 # CUDA 引擎在打包期用 patchelf 剥离 /opt/cuda RUNPATH（namcap: Insecure RUNPATH）；
 # 运行期由 daemon 注入 LD_LIBRARY_PATH（capsasr/backend.py，兼容 CUDA_HOME 等任意安装位置）。
 # 包不含模型与用户配置——装包后 `capsasr init` 完成（数据落 ~/.capsasr）。
+# capsasr-fcitx 源码在仓库 fcitx-addon/（版本号同步改 CMakeLists 的 project VERSION）。
 #
 # 发布前（顺序）:
 #   1. 代码推上去并打 tag v$pkgver
-#   2. cd packaging && makepkg -sf（需 patchelf），把两个预构建包传到 Release v$pkgver
+#   2. cd packaging && makepkg -sf（需 patchelf），把预构建包传到 Release v$pkgver
 #   3. （可选，AUR 恢复注册后）makepkg --printsrcinfo > .SRCINFO，与 PKGBUILD 提交 AUR
 #
 # 引擎二进制与版本解耦：存放在专用 Release "engines"（上面 _engine/_engine_cuda 指向那里），
@@ -27,16 +32,16 @@
 #   capsasr-cuda 的 cublasLt unused W（链接器 as-needed 现象）与 capsasr 跨包依赖 W
 
 pkgbase=capsasr
-pkgname=(capsasr capsasr-cuda)
-pkgver=0.6.0
-pkgrel=2
+pkgname=(capsasr capsasr-cuda capsasr-fcitx)
+pkgver=0.7.0
+pkgrel=3
 pkgdesc="本地语音输入: 长按 CapsLock 说话, 松手识别粘贴 (引擎 Fun-ASR-Nano GGUF, 无 PyTorch)"
 arch=(x86_64)
 _repo="https://github.com/Wry-Zen/capsasr"
 url="$_repo"
 license=(MIT Apache-2.0)
 options=(!debug)
-makedepends=(patchelf)
+makedepends=(patchelf cmake fcitx5)
 
 : "${_code:=${_repo}/archive/refs/tags/v${pkgver}.tar.gz}"
 : "${_engine:=${_repo}/releases/download/engines/capsasr-engine-vulkan}"
@@ -58,6 +63,7 @@ package_capsasr() {
     optdepends=(
       'libnotify: 桌面通知通道 notify-send（缺失时提示静默跳过）'
       'dms: DMS 悬浮 toast 通知通道（AUR/自行安装，缺失自动退回 notify-send）'
+      'capsasr-fcitx: fcitx5 文本直接提交（不占剪贴板；未装时 fcitx 模式自动回退剪贴板粘贴）'
       'vulkan-tools: 设备探测回退'
       'bash-completion: bash 自动加载补全'
     )
@@ -98,4 +104,15 @@ package_capsasr-cuda() {
     # 剥离指向包外路径的 RUNPATH；运行期 daemon 注入 LD_LIBRARY_PATH 解析 cudart/cublas/nccl
     patchelf --remove-rpath "$_app/engines/capsasr-engine-cuda"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/capsasr-cuda/MIT"
+}
+
+package_capsasr-fcitx() {
+    pkgdesc="CapsASR fcitx5 文本提交模块（识别文本经输入法直接进焦点窗口, 不占剪贴板）"
+    depends=(fcitx5 glibc libstdc++ libgcc)
+
+    _prepare
+    cmake -B build -S fcitx-addon -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+    cmake --build build
+    DESTDIR="$pkgdir" cmake --install build
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/capsasr-fcitx/MIT"
 }

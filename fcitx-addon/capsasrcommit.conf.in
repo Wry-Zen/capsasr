@@ -1,0 +1,7 @@
+[Addon]
+Name=CapsASR Commit
+Category=Module
+Version=@PROJECT_VERSION@
+Library=capsasrcommit
+Type=SharedLibrary
+OnDemand=False

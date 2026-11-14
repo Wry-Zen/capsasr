@@ -161,6 +161,33 @@ def _ask_notify_channel() -> str | None:
     return None
 
 
+def _ask_paste_method() -> str:
+    """向导里的文本输出通道选择：剪贴板粘贴 / fcitx5 提交 / 提交并留剪贴板。"""
+    from .paste import fcitx_available
+
+    fcitx_ok = fcitx_available()
+    hint = ("（检测到 capsasr-fcitx ✓）" if fcitx_ok
+            else "（✗ 未检测到，装后可用: sudo pacman -S capsasr-fcitx）")
+    print("\n文本输出:")
+    print("  1) 剪贴板粘贴（wl-copy + Ctrl+V；全环境可用，短暂占用剪贴板）")
+    print("  2) fcitx5 直接提交（不占剪贴板，经输入法进焦点窗口）" + hint)
+    print("  3) fcitx5 提交并留剪贴板（进焦点框，同时复制一份备粘贴）" + hint)
+    for _ in range(3):
+        pick = _ask("选择 1/2/3:", "1").strip().lower()
+        if pick in ("1", "c", "clipboard"):
+            return "clipboard"
+        if pick in ("2", "f", "fcitx", "fcitx5"):
+            if not fcitx_ok:
+                print("  ! capsasr-fcitx 未检测到——fcitx 模式会在运行时回退剪贴板粘贴")
+            return "fcitx"
+        if pick in ("3", "fcitx+copy", "fcitx5+copy", "both"):
+            if not fcitx_ok:
+                print("  ! capsasr-fcitx 未检测到——fcitx 模式会在运行时回退剪贴板粘贴")
+            return "fcitx+copy"
+        print("  无效选择：输入 1、2 或 3")
+    return "clipboard"
+
+
 def _download_models() -> bool:
     """下载三个模型；已就绪（校验通过）的自动跳过，支持断点续跑。"""
     try:
@@ -203,6 +230,14 @@ def cmd_init(args) -> int:
         channel = _ask_notify_channel()
         if channel:
             overrides["notify"] = {"enabled": True, "channel": channel}
+        method = _ask_paste_method()
+    else:
+        # 装了 capsasr-fcitx 且 addon 在监听 → 默认直走 fcitx；否则剪贴板
+        from .paste import fcitx_available
+
+        method = "fcitx" if fcitx_available() else "clipboard"
+    if method != "clipboard":
+        overrides["paste"] = {"method": method}
 
     hw = CAPSASR_HOME / "hotwords.txt"
     enable_hw = (not args.yes) and _ask("启用热词表? y/n:", "y").lower() in ("y", "yes")
@@ -345,6 +380,10 @@ def cmd_config(args) -> int:
             args.value = (args.value or "").strip().lower()
             if args.value not in CHANNELS:
                 raise SystemExit(f"notify.channel 只接受 {' / '.join(CHANNELS)}")
+        if args.key == "paste.method":
+            args.value = (args.value or "").strip().lower()
+            if args.value not in ("clipboard", "fcitx", "fcitx+copy"):
+                raise SystemExit("paste.method 只接受 clipboard / fcitx / fcitx+copy")
         set_config_value(args.key, args.value)
         print(f"{config_path()}: {args.key} = {args.value}")
         if args.key == "hotkey.hold_ms":
@@ -390,6 +429,7 @@ def _cfg_attr(dotted: str) -> str:
         "hotkey.layer": "trigger_layer",
         "notify.enabled": "notify_enabled",
         "notify.channel": "notify_channel",
+        "paste.method": "paste_method",
     }
     if dotted in special:
         return special[dotted]
@@ -521,6 +561,14 @@ def cmd_doctor(args) -> int:
         hw_words = cfg.load_hotwords()
         prev = "、".join(hw_words[:3]) + ("…" if len(hw_words) > 3 else "")
         print(f" 热词: {len(hw_words)} 个" + (f"（{prev}）" if prev else "（空表，capsasr hotwords add 添加）"))
+    if cfg.paste_method.startswith("fcitx"):
+        from .paste import fcitx_available
+
+        fc_ok = fcitx_available()
+        print(f" 文本输出: {cfg.paste_method}" + ("（capsasr-fcitx ✓ 监听中）" if fc_ok
+                                    else "（✗ addon 未监听，提交将回退剪贴板: sudo pacman -S capsasr-fcitx 后重启 fcitx5）"))
+    else:
+        print(" 文本输出: 剪贴板（wl-copy + ydotool Ctrl+V）")
     check("ydotoold", _ydotoold_running(), "Ctrl+V 模拟需要 ydotoold 运行")
     xdg = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     check("XDG 自启条目", (xdg / "autostart/capsasr.desktop").exists())

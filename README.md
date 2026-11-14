@@ -16,35 +16,40 @@ CapsLock ──keyd(/etc/keyd, overloadt 325ms)──> voice层 ──keyd liste
                                               ├─ ASR：llama-funasr-cli --stream 常驻子进程
                                               │    （GGUF Q8；后端探测 cuda→vulkan→cpu）
                                               │    松手时 SIGUSR1 触发尾段提交（tools/funasr-cli.patch）
-                                              └─ wl-copy + ydotool Ctrl+V 粘贴
-                                                   （0.5s 后按原 MIME 恢复剪贴板，含图片等二进制）
+                                              └─ 文本输出（fcitx 失败自动回退剪贴板）
+                                                   ├─ fcitx5 直接提交（capsasr-fcitx，不占剪贴板）
+                                                   └─ wl-copy + ydotool Ctrl+V 粘贴
+                                                        （0.5s 后按原 MIME 恢复剪贴板，含图片等二进制）
 ```
 
 ## 安装（Arch）
 
-包分两个：`capsasr` 主包（Python 运行体 + Vulkan 引擎，独立完整可用）与 `capsasr-cuda`
-（CUDA 引擎，仅 NVIDIA 用户加装，连带安装 nvidia-utils/cuda/nccl）。auto 模式下 CUDA 优先于
-Vulkan；未安装则探测自动跳过，不影响使用。
+包分三个：`capsasr` 主包（Python 运行体 + Vulkan 引擎，独立完整可用）、`capsasr-cuda`
+（CUDA 引擎，仅 NVIDIA 用户加装，连带安装 nvidia-utils/cuda）与 `capsasr-fcitx`
+（fcitx5 文本提交模块，免剪贴板输出，可选）。auto 模式下 CUDA 优先于 Vulkan；
+未安装则探测自动跳过，不影响使用。
 
 ```bash
 # A. 预构建包（GitHub Release 下载）
-sudo pacman -U capsasr-0.6.0-2-x86_64.pkg.tar.zst
+sudo pacman -U capsasr-0.7.0-1-x86_64.pkg.tar.zst
 #   要用 CUDA 后端再追加：
-#   sudo pacman -U capsasr-cuda-0.6.0-2-x86_64.pkg.tar.zst
+#   sudo pacman -U capsasr-cuda-0.7.0-1-x86_64.pkg.tar.zst
+#   用 fcitx5 且想免剪贴板输出（装后 fcitx5 -rd 重启输入法）：
+#   sudo pacman -U capsasr-fcitx-0.7.0-1-x86_64.pkg.tar.zst
 
 # B. 从源码构建（自动拉预编译引擎；需 base-devel 与 patchelf）
 git clone https://github.com/Wry-Zen/capsasr.git && cd capsasr/packaging && makepkg -sf
-sudo pacman -U capsasr-0.6.0-2-x86_64.pkg.tar.zst   # 需要时再装 capsasr-cuda-*.zst
+sudo pacman -U capsasr-0.7.0-1-x86_64.pkg.tar.zst   # 需要时再装 capsasr-cuda / capsasr-fcitx
 ```
 
 命令补全（bash/zsh/fish）随包安装；仓库直跑可 `source completions/capsasr.bash`（zsh/fish 同理）。
 
-**平台要求**：x86_64 Linux（Arch；CPU 需支持 AVX2，约 2013 年后）；**Wayland 会话**（粘贴链依赖 wl-copy/wl-paste）；GPU 显存 ~2.7GB（Vulkan 或 CUDA，不足则自动降级 CPU，零显存但延迟约翻倍）；CUDA 引擎需 NVIDIA 驱动 + CUDA 13 运行库（`capsasr-cuda` 会自动拉齐）。
+**平台要求**：x86_64 Linux（Arch；CPU 需支持 AVX2，约 2013 年后）；**Wayland 会话**（剪贴板通道依赖 wl-copy/wl-paste 与 ydotool）；GPU 显存 ~2.7GB（Vulkan 或 CUDA，不足则自动降级 CPU，零显存但延迟约翻倍）；CUDA 引擎需 NVIDIA 驱动 + CUDA 13 运行库（`capsasr-cuda` 会自动拉齐）。
 
 ## 初始化
 
 ```bash
-capsasr init            # 向导：模型下载、后端/选卡、激活时长、通知通道、热词、自启
+capsasr init            # 向导：模型下载、后端/选卡、激活时长、通知通道、文本输出、热词、自启
 sudo capsasr setup-keyd # 唯一需要 root 的环节：把 CapsLock 长按阈值写入 keyd
 capsasr-daemon &        # init 选了自启则下次登录生效；这是立即启动
 ```
@@ -53,13 +58,14 @@ capsasr-daemon &        # init 选了自启则下次登录生效；这是立即�
   Hugging Face / hf-mirror / ModelScope 依次回退下载，sha256 校验，中断重跑续传（已就绪自动跳过）
 - init 选 autostart 会立即后台启动守护进程
 - 通知通道在向导里四选一：DMS 悬浮 toast / 通用通知 / 两者都要 / 不启用（见下文「通知通道」）
+- 文本输出在向导里三选一：剪贴板粘贴 / fcitx5 直接提交 / 提交并留剪贴板（见下文「文本输出通道」）
 
 ## 控制命令
 
 | 命令 | 说明 |
 |---|---|
-| `capsasr init` | 向导：模型下载、后端/选卡、通知通道、热词、自启（`--force` 重配，`--yes` 全默认） |
-| `capsasr doctor` | 环境体检：python/模型/后端探测/设备/daemon/keyd/ydotoold（`--verify` 做完整 sha256） |
+| `capsasr init` | 向导：模型下载、后端/选卡、通知与文本输出通道、热词、自启（`--force` 重配，`--yes` 全默认） |
+| `capsasr doctor` | 环境体检：python/模型/后端探测/设备/daemon/keyd/输出通道（`--verify` 做完整 sha256） |
 | `capsasr config` | 列出全部配置（`*`=配置文件显式设置） |
 | `capsasr config get backend.mode` | 查单键 |
 | `capsasr config set backend.mode vulkan` | **终端改写配置**：行级编辑，保留注释与结构 |
@@ -71,7 +77,7 @@ capsasr-daemon &        # init 选了自启则下次登录生效；这是立即�
 | `capsasr daemon` | 前台运行守护进程（systemd/调试用） |
 | `capsasr-daemon` | 带环境自愈 + 崩溃 3s 重拉的包装壳（桌面自启条目指向它） |
 
-改 `hotkey.hold_ms` 后需 `sudo capsasr setup-keyd` 生效；改 `notify.enabled` / `notify.channel` 后重启 daemon。
+改 `hotkey.hold_ms` 后需 `sudo capsasr setup-keyd` 生效；改 `notify.enabled` / `notify.channel` / `paste.method` 后重启 daemon。
 
 ## 目录布局
 
@@ -105,6 +111,7 @@ capsasr-daemon &        # init 选了自启则下次登录生效；这是立即�
 | `notify.enabled` | false | 状态提示总开关（含后端降级通知） |
 | `notify.channel` | desktop | desktop=通用通知留档；dms=DMS 悬浮 toast；both=悬浮+留档 |
 | `capture.*` | 16000 / 300 / -40 / 100 / 200 / 0.35 / 60 | 采样率Hz / 预卷ms / 裁剪阈值dB / 首垫ms / 尾垫ms / 最短s / 最长s |
+| `paste.method` | clipboard | clipboard=wl-copy+Ctrl+V（默认）；fcitx=直接提交不占剪贴板；fcitx+copy=提交并留档剪贴板（失败自动回退剪贴板粘贴） |
 | `paste.restore_clipboard / restore_delay_ms` | true / 500 | 剪贴板恢复 |
 | `server.socket` | capsasr.sock | 位于 `$XDG_RUNTIME_DIR` 下 |
 
@@ -127,6 +134,26 @@ capsasr doctor                          # 会显示当前通道与 dms 是否可
 - **DMS toast 时长固定、不能自定义**：info 1.5s、warn 3s、error 5s，error 带明细 8s；一次只显示一条，多条排队（上限 3，同级同文本自动去重）
 - `dms` 未安装/未启动/调用失败时**自动退回 `notify-send`**，提示不会静默丢失；需要历史记录就用 `both` 或 `desktop`
 - 没有 DMS 的桌面（GNOME/KDE 等）选 `desktop` 即可；DMS 见 <https://github.com/AvengeMedia/DankMaterialShell>
+
+## 文本输出通道
+
+`[paste] method` 决定识别文本怎么进入焦点窗口：
+
+| 值 | 行为 |
+|---|---|
+| `clipboard`（默认） | wl-copy + ydotool 模拟 Ctrl+V；全环境可用，短暂占用剪贴板后按原 MIME 恢复（含图片等二进制） |
+| `fcitx` | 经 `capsasr-fcitx` 模块（fcitx5 addon）直接提交到焦点输入框——不占剪贴板、无恢复延迟，CJK 走输入法原生路径 |
+| `fcitx+copy` | 同上直接提交，同时把识别文本留档进剪贴板（有意覆盖，不恢复），方便事后去别处粘贴 |
+
+```bash
+sudo pacman -U capsasr-fcitx-0.7.0-1-x86_64.pkg.tar.zst  # 装模块（Release 下载）
+fcitx5 -rd                                                # 重启输入法加载 addon
+capsasr config set paste.method fcitx                     # 切换通道（改了要重启 daemon）
+capsasr doctor                                            # 显示 addon 是否监听
+```
+
+- fcitx 通道提交失败（模块未装/未监听、无焦点输入框、fcitx5 超时）时**自动回退剪贴板粘贴**并气泡提示
+- 适用 fcitx5 用户（KDE 生态默认；GNOME 需自行配好 fcitx5）；ibus 用户请保持 `clipboard`
 
 ## 后端与选卡
 
@@ -154,11 +181,11 @@ device = "auto"    # 设备名子串（如 "RADV"、"RTX"；纯数字一律按�
 ```bash
 capsasr uninstall --purge        # 清自启/服务/进程/数据（--purge 连模型；不加则保留 ~/.capsasr）
 sudo capsasr setup-keyd --remove  # CapsLock 恢复原状（可选）
-sudo pacman -R capsasr            # 卸载系统包（装了 capsasr-cuda 则 `pacman -R capsasr capsasr-cuda`）
+sudo pacman -R capsasr            # 卸载系统包（连同已装的 capsasr-cuda / capsasr-fcitx 一起写进 -R）
 ```
 
 ## 依赖与许可
 
 - Python ≥ 3.11 标准库（tomllib；**零 pip 依赖**）
-- 系统依赖见包 `depends`（pipewire/parec、keyd、wl-clipboard、ydotool+ydotoold、Vulkan 加载器）；通知为**可选**：libnotify（notify-send 通道）与 dms（toast 通道）缺失时提示静默跳过/退回，`capsasr init` 与 `doctor` 会显示各通道可用性
+- 系统依赖见包 `depends`（pipewire/parec、keyd、wl-clipboard、ydotool+ydotoold、Vulkan 加载器）；通知与文本输出为**可选**：libnotify（notify-send 通道）、dms（toast 通道）与 capsasr-fcitx（fcitx5 文本提交，依赖 fcitx5）缺失时提示静默跳过/退回，`capsasr init` 与 `doctor` 会显示各通道可用性
 - 模型权重 Apache-2.0（FunAudioLLM）；本仓库代码 MIT（见 LICENSE）

@@ -7,7 +7,7 @@ _capsasr_config_keys="backend.mode backend.device backend.ngl backend.enc_thread
 models.enc models.llm models.vad engine.language engine.hotwords \
 hotkey.layer hotkey.hold_ms notify.enabled notify.channel \
 capture.sample_rate capture.preroll_ms capture.trim_db capture.head_pad_ms capture.tail_pad_ms \
-capture.min_seconds capture.max_seconds paste.restore_clipboard paste.restore_delay_ms server.socket"
+capture.min_seconds capture.max_seconds paste.method paste.restore_clipboard paste.restore_delay_ms server.socket"
 
 _capsasr() {
     local cur prev cmd="" action="" i
@@ -55,6 +55,8 @@ _capsasr() {
                                             COMPREPLY=($(compgen -W "true false" -- "$cur")) ;;
                             notify.channel)
                                             COMPREPLY=($(compgen -W "desktop dms both" -- "$cur")) ;;
+                            paste.method)
+                                            COMPREPLY=($(compgen -W "clipboard fcitx fcitx+copy" -- "$cur")) ;;
                             engine.language) COMPREPLY=($(compgen -W "中文 英文 日文" -- "$cur")) ;;
                             *)              COMPREPLY=() ;;
                         esac

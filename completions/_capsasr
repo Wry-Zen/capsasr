@@ -10,7 +10,7 @@ _capsasr_keys=(
     notify.enabled notify.channel
     capture.sample_rate capture.preroll_ms capture.trim_db capture.head_pad_ms capture.tail_pad_ms
     capture.min_seconds capture.max_seconds
-    paste.restore_clipboard paste.restore_delay_ms
+    paste.method paste.restore_clipboard paste.restore_delay_ms
     server.socket
 )
 
@@ -85,6 +85,7 @@ _capsasr() {
                                             notify.enabled|paste.restore_clipboard)
                                                             _values '开关' true false ;;
                                             notify.channel) _values '通知通道' desktop dms both ;;
+                                            paste.method)   _values '文本输出' clipboard fcitx 'fcitx+copy' ;;
                                             engine.language) _values '语言' 中文 英文 日文 ;;
                                         esac
                                     fi

@@ -13,7 +13,7 @@ from .config import Config
 from .engine import Engine
 from .hotkey import HotkeyListener
 from .notify import configure, notify
-from .paste import paste_text
+from .paste import submit_text
 from .server import Server
 
 
@@ -87,13 +87,16 @@ class Daemon:
             notify("未识别到内容", f"{dur:.1f}s / {elapsed:.2f}s")
             return
 
-        ok = paste_text(
+        ok = submit_text(
             text,
-            restore=cfg.restore_clipboard,
-            restore_delay_ms=cfg.restore_delay_ms,
+            cfg.paste_method,
+            cfg.restore_clipboard,
+            cfg.restore_delay_ms,
         )
         if ok:
-            notify("✓ 已粘贴", f"{text[:80]}", timeout_ms=3000)
+            label = {"fcitx": "✓ 已提交", "fcitx+copy": "✓ 已提交并复制"}.get(
+                cfg.paste_method, "✓ 已粘贴")
+            notify(label, f"{text[:80]}", timeout_ms=3000)
         print(f"[daemon] {dur:.1f}s audio -> {elapsed:.2f}s: {text}", flush=True)
 
     def run(self):

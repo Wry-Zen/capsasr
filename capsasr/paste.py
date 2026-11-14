@@ -1,6 +1,9 @@
+import socket
 import subprocess
 import threading
 import time
+
+from .config import RUNTIME_DIR
 
 _TEXT_TYPES = [
     "text/plain;charset=utf-8",
@@ -37,7 +40,7 @@ def _save_clipboard():
     if pick is None:
         pick = types[0]
 
-    data = _run(["wl-paste", "-t", pick])
+    data = _run(["wl-paste", "--no-newline", "-t", pick])
     if data.returncode != 0 or not data.stdout:
         return None
     return data.stdout, pick
@@ -46,6 +49,17 @@ def _save_clipboard():
 def _restore_clipboard(data: bytes, mime: str):
     p = subprocess.Popen(["wl-copy", "-t", mime], stdin=subprocess.PIPE)
     p.communicate(data)
+
+
+def _press_ctrl_v() -> bool:
+    r = _run(["ydotool", "key", "29:1", "47:1", "47:0", "29:0"])
+    return r.returncode == 0
+
+
+def _copy_to_clipboard(text: str) -> bool:
+    p = subprocess.Popen(["wl-copy"], stdin=subprocess.PIPE)
+    p.communicate(text.encode("utf8"))
+    return p.returncode == 0
 
 
 def paste_text(text: str, restore: bool = True, restore_delay_ms: int = 500) -> bool:
@@ -65,8 +79,7 @@ def paste_text(text: str, restore: bool = True, restore_delay_ms: int = 500) -> 
         return False
 
     time.sleep(0.05)
-    r = _run(["ydotool", "key", "29:1", "47:1", "47:0", "29:0"])
-    if r.returncode != 0:
+    if not _press_ctrl_v():
         # 粘贴失败：识别文本已在剪贴板，跳过恢复，留给用户手动粘贴
         print(f"[paste] ydotool 失败(rc={r.returncode})，识别文本留在剪贴板", flush=True)
         from .notify import notify
@@ -81,3 +94,56 @@ def paste_text(text: str, restore: bool = True, restore_delay_ms: int = 500) -> 
 
         threading.Thread(target=_later, daemon=True).start()
     return True
+
+
+# ---------- fcitx5 文本提交通道（capsasr-fcitx addon） ----------
+
+def _fcitx_roundtrip(payload: bytes, timeout: float) -> str:
+    """与 capsasrcommit addon 交互一次：8 位十六进制长度 + \\n + 字节。
+
+    空负载为探测（应答 PONG）；返回 OK / NOIC / TIMEOUT / BAD / PONG / FAIL。
+    """
+    s = None
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect(str(RUNTIME_DIR / "capsasr-commit.sock"))
+        s.sendall(f"{len(payload):08x}\n".encode() + payload)
+        return s.recv(16).decode("utf8", "replace").strip() or "FAIL"
+    except OSError:
+        return "FAIL"
+    finally:
+        if s is not None:
+            s.close()
+
+
+def fcitx_available() -> bool:
+    """capsasr-fcitx addon 是否加载并在监听（ping/pong 探测）。"""
+    return _fcitx_roundtrip(b"", 1.0) == "PONG"
+
+
+def submit_text(text: str, method: str, restore: bool, restore_delay_ms: int) -> bool:
+    """按输出通道提交文本；fcitx 系通道失败（未装/无焦点/超时）自动回退剪贴板粘贴。"""
+    if method in ("fcitx", "fcitx+copy"):
+        from .notify import notify
+
+        if method == "fcitx+copy":
+            # 先把识别文本留档进剪贴板（有意覆盖当前内容，不做恢复）
+            if not _copy_to_clipboard(text):
+                notify("剪贴板写入失败", "文本未留档，仍尝试 fcitx 提交", level="warn")
+            time.sleep(0.05)
+
+        ack = _fcitx_roundtrip(text.encode("utf8"), 1.0)
+        if ack == "OK":
+            return True
+        detail = {"FAIL": "addon 未装或未监听", "NOIC": "无焦点输入框",
+                  "TIMEOUT": "fcitx5 响应超时"}.get(ack, ack)
+        print(f"[paste] fcitx 提交失败（{ack}），回退剪贴板", flush=True)
+        notify("fcitx 提交失败", f"{detail}，已改用剪贴板粘贴", level="warn")
+        if method == "fcitx+copy":
+            # 文本已在剪贴板：只需模拟 Ctrl+V，不覆盖也不恢复
+            if _press_ctrl_v():
+                return True
+            notify("自动粘贴失败", "识别文本已留在剪贴板，可手动 Ctrl+V", level="error")
+            return False
+    return paste_text(text, restore=restore, restore_delay_ms=restore_delay_ms)

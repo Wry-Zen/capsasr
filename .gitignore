@@ -18,3 +18,5 @@ logs/
 # 本地文档与示例，不入库
 /ARCHITECTURE.md
 /hotwords.txt
+packaging/capsasr-engine-vulkan
+packaging/capsasr-engine-cuda

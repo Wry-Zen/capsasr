@@ -36,7 +36,7 @@ set -l _capsasr_config_keys \
     notify.enabled notify.channel \
     capture.sample_rate capture.preroll_ms capture.trim_db capture.head_pad_ms capture.tail_pad_ms \
     capture.min_seconds capture.max_seconds \
-    paste.restore_clipboard paste.restore_delay_ms \
+    paste.method paste.restore_clipboard paste.restore_delay_ms \
     server.socket
 complete -c capsasr -n '__fish_seen_subcommand_from config; and __fish_seen_subcommand_from get' -a "$_capsasr_config_keys"
 complete -c capsasr -n '__fish_seen_subcommand_from config; and contains -- (commandline -opc)[-1] set' -a "$_capsasr_config_keys"
@@ -45,6 +45,7 @@ complete -c capsasr -n '__fish_seen_subcommand_from config; and contains -- (com
 complete -c capsasr -n 'contains -- (commandline -opc)[-1] backend.mode' -a 'auto cuda vulkan cpu'
 complete -c capsasr -n 'contains -- (commandline -opc)[-1] notify.enabled paste.restore_clipboard' -a 'true false'
 complete -c capsasr -n 'contains -- (commandline -opc)[-1] notify.channel' -a 'desktop dms both'
+complete -c capsasr -n 'contains -- (commandline -opc)[-1] paste.method' -a 'clipboard fcitx fcitx+copy'
 complete -c capsasr -n 'contains -- (commandline -opc)[-1] engine.language' -a '中文 英文 日文'
 
 complete -c capsasr -n '__fish_seen_subcommand_from uninstall' -l purge -d '连 ~/.capsasr（含模型）一起删除'

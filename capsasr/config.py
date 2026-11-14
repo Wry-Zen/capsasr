@@ -46,7 +46,7 @@ DEFAULTS: dict = {
         "min_seconds": 0.35,
         "max_seconds": 60.0,
     },
-    "paste": {"restore_clipboard": True, "restore_delay_ms": 500},
+    "paste": {"method": "clipboard", "restore_clipboard": True, "restore_delay_ms": 500},
     "server": {"socket": "capsasr.sock"},
 }
 
@@ -112,6 +112,8 @@ class Config:
         self.max_seconds = float(cap.get("max_seconds", 60.0))
 
         pa = merged["paste"]
+        pm = str(pa.get("method", "clipboard")).strip().lower()
+        self.paste_method = pm if pm in ("clipboard", "fcitx", "fcitx+copy") else "clipboard"
         self.restore_clipboard = bool(pa.get("restore_clipboard", True))
         self.restore_delay_ms = int(pa.get("restore_delay_ms", 500))
 
