@@ -27,6 +27,7 @@ class Daemon:
         self.server = Server(
             cfg.socket_path, self.engine.transcribe,
             reload_fn=self.engine.reload_hotwords,
+            reconf_fn=self._reload_config,
         )
 
         self._jobs: queue.Queue = queue.Queue(maxsize=1)
@@ -56,6 +57,18 @@ class Daemon:
             self._jobs.put_nowait((audio, total))
         except queue.Full:
             notify("识别忙碌，已丢弃本次录音", level="warn")
+
+    def _reload_config(self) -> str:
+        """config set 后热重载：重读磁盘配置并刷新通知通道。
+
+        仅 paste.*/notify.* 保证即时生效（_process 每次读 self.cfg）；
+        engine/capture 持有启动时提取的参数，这类改动仍需重启守护进程。
+        """
+        self.cfg = Config(self.cfg.path)
+        configure(self.cfg.notify_enabled, self.cfg.notify_channel)
+        print(f"[daemon] 配置已热重载: paste.method={self.cfg.paste_method}, "
+              f"notify={self.cfg.notify_channel}", flush=True)
+        return self.cfg.paste_method
 
     def _work(self):
         while True:
@@ -130,8 +143,10 @@ def _acquire_singleton(cfg) -> object | None:
     """登录自启撞上已运行实例时安静退出，避免双录音/引擎双份显存。
 
     必须在 Engine 构造（spawn 引擎子进程）之前调用。
+    锁名跟随 socket 名（<socket>.lock）：CAPSASR_HOME/自定 socket 的测试实例
+    不与正式实例互斥。
     """
-    lock_path = os.path.join(os.path.dirname(cfg.socket_path), "capsasr.lock")
+    lock_path = str(cfg.socket_path) + ".lock"
     fh = open(lock_path, "w")
     try:
         fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -150,7 +165,7 @@ def main():
     lock = _acquire_singleton(cfg)
     if lock is None:
         print("[daemon] 已有实例在运行，退出", flush=True)
-        sys.exit(0)
+        sys.exit(42)  # 壳识别此码后自我退出，不再重拉（避免登录自启叠出多个壳）
     try:
         Daemon(cfg).run()
     finally:

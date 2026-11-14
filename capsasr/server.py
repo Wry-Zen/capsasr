@@ -6,13 +6,16 @@ import threading
 
 class Server:
     """Unix socket 接口：{"wav": path} → {"ok","text"} 转写；
-    {"cmd":"reload"} → {"ok","words"} 热词重载（capsasr hotwords 系列命令用）。
+    {"cmd":"reload"} → {"ok","words"} 热词重载（capsasr hotwords 系列命令用）；
+    {"cmd":"reconf"} → {"ok","method"} 配置热重载（capsasr config set 用，
+    paste/notify 即时生效；不重启引擎）。
     """
 
-    def __init__(self, socket_path: str, transcribe_fn, reload_fn=None):
+    def __init__(self, socket_path: str, transcribe_fn, reload_fn=None, reconf_fn=None):
         self.path = socket_path
         self.transcribe = transcribe_fn
         self.reload = reload_fn
+        self.reconf = reconf_fn
         self._thread = threading.Thread(target=self._loop, daemon=True)
 
     def start(self):
@@ -47,6 +50,8 @@ class Server:
             if "cmd" in req:
                 if req["cmd"] == "reload" and self.reload:
                     reply = {"ok": True, "words": self.reload()}
+                elif req["cmd"] == "reconf" and self.reconf:
+                    reply = {"ok": True, "method": self.reconf()}
                 else:
                     reply = {"ok": False, "error": f"未知命令: {req.get('cmd')!r}"}
             else:

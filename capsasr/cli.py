@@ -172,6 +172,8 @@ def _ask_paste_method() -> str:
     print("  1) 剪贴板粘贴（wl-copy + Ctrl+V；全环境可用，短暂占用剪贴板）")
     print("  2) fcitx5 直接提交（不占剪贴板，经输入法进焦点窗口）" + hint)
     print("  3) fcitx5 提交并留剪贴板（进焦点框，同时复制一份备粘贴）" + hint)
+    print("  （2/3 对少数窗口不生效——密码框、部分 X11 老应用、全屏独占键盘的")
+    print("   游戏等——此时自动回退剪贴板粘贴，文本不丢）")
     for _ in range(3):
         pick = _ask("选择 1/2/3:", "1").strip().lower()
         if pick in ("1", "c", "clipboard"):
@@ -386,10 +388,15 @@ def cmd_config(args) -> int:
                 raise SystemExit("paste.method 只接受 clipboard / fcitx / fcitx+copy")
         set_config_value(args.key, args.value)
         print(f"{config_path()}: {args.key} = {args.value}")
-        if args.key == "hotkey.hold_ms":
+        if args.key in ("notify.enabled", "notify.channel",
+                        "paste.method", "paste.restore_clipboard", "paste.restore_delay_ms"):
+            method = _daemon_reconf()
+            if method:
+                print(f"已热重载守护进程（当前输出通道: {method}），即时生效")
+            else:
+                print('守护进程未运行；下次启动生效（或 pkill -f "[c]apsasr.daemon" 重拉）')
+        elif args.key == "hotkey.hold_ms":
             print("执行 sudo capsasr setup-keyd 使按住阈值生效")
-        elif args.key in ("notify.enabled", "notify.channel"):
-            print('重启守护进程生效（pkill -f "[c]apsasr.daemon"，壳会自动拉起）')
         return 0
     # get / list
     cfg = Config()
@@ -654,6 +661,26 @@ def _daemon_reload() -> int | None:
     return reply.get("words") if reply.get("ok") else None
 
 
+def _daemon_reconf() -> str | None:
+    """经 daemon socket 热重载配置；返回 daemon 当前 paste.method，未运行返回 None。"""
+    cfg = Config()
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(5)
+        s.connect(cfg.socket_path)
+        s.sendall((json.dumps({"cmd": "reconf"}) + "\n").encode())
+        buf = b""
+        while True:
+            b = s.recv(65536)
+            if not b:
+                break
+            buf += b
+        reply = json.loads(buf.decode())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return reply.get("method") if reply.get("ok") else None
+
+
 def _hw_autoreload():
     n = _daemon_reload()
     if n is not None:
@@ -759,7 +786,7 @@ def cmd_uninstall(args) -> int:
         unit.unlink()
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
         print(f"已移除 {unit}")
-    for name in ("capsasr.sock", "capsasr.lock"):
+    for name in ("capsasr.sock", "capsasr.sock.lock"):
         (RUNTIME_DIR / name).unlink(missing_ok=True)
 
     if args.purge:

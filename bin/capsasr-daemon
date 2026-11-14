@@ -34,6 +34,11 @@ echo "=== $(date) capsasr-daemon 启动 (root=$APP_ROOT) ==="
 while true; do
     python3 -m capsasr.daemon
     rc=$?
+    # 42 = 单例锁冲突（已有实例在跑）：正常情况，本壳退出不再重拉
+    if [ "$rc" -eq 42 ]; then
+        echo "capsasr-daemon: 已有实例在运行，本壳退出"
+        exit 0
+    fi
     echo "capsasr-daemon 退出(rc=$rc)，3s 后重启"
     sleep 3
 done

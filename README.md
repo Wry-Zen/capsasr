@@ -77,7 +77,7 @@ capsasr-daemon &        # init 选了自启则下次登录生效；这是立即�
 | `capsasr daemon` | 前台运行守护进程（systemd/调试用） |
 | `capsasr-daemon` | 带环境自愈 + 崩溃 3s 重拉的包装壳（桌面自启条目指向它） |
 
-改 `hotkey.hold_ms` 后需 `sudo capsasr setup-keyd` 生效；改 `notify.enabled` / `notify.channel` / `paste.method` 后重启 daemon。
+改 `hotkey.hold_ms` 后需 `sudo capsasr setup-keyd` 生效；`paste.method` / `paste.restore_*` / `notify.*` 改动热重载即时生效；其余键重启 daemon 生效。
 
 ## 目录布局
 
@@ -152,7 +152,8 @@ capsasr config set paste.method fcitx                     # 切换通道（改�
 capsasr doctor                                            # 显示 addon 是否监听
 ```
 
-- fcitx 通道提交失败（模块未装/未监听、无焦点输入框、fcitx5 超时）时**自动回退剪贴板粘贴**并气泡提示
+- fcitx 通道对少数窗口不生效（密码框、部分 X11 老应用、全屏独占键盘的游戏等），此时**自动回退剪贴板粘贴**并气泡提示
+- `capsasr config set paste.method` / `paste.restore_*` / `notify.*` 改动经 daemon socket **热重载，即时生效**（后端/采集类改动仍需重启守护进程）
 - 适用 fcitx5 用户（KDE 生态默认；GNOME 需自行配好 fcitx5）；ibus 用户请保持 `clipboard`
 
 ## 后端与选卡
